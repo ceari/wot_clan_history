@@ -31,14 +31,21 @@ db_clans.ensure_index('member_ids')
 db_players.ensure_index('account_name')
 
 
+def chunks(l, n):
+    """ Splits a list l into chunks of length n"""
+    for i in range(0, len(l), n):
+        yield l[i:i+n]
+
+
 def sync():
+    """ Synchronize the database """
     logger = logging.getLogger(__name__)
     logger.addHandler(logging.StreamHandler())
-    res = group(get_clans.s(no) for no in range(107, 200))().get()
+    res = group(get_clans.s(no) for no in range(280, 405))().get()
     clans = list(itertools.chain.from_iterable(res))
     num_players = sum(clan['members_count'] for clan in clans)
     logger.info("Processing %d clans and %d players in total", len(clans), num_players)
-    group([get_members_and_update_db.s(clan) for clan in clans])().get()
+    group([get_members_and_update_db.s(c) for c in chunks(clans, 50)])().get()
     logger.info("Checking players that are not in any clans")
     for player in db_players.find():
         if db_clans.find_one({'member_ids': player['account_id']}, {"_id": 1}) is None:
@@ -47,9 +54,11 @@ def sync():
 
 
 def update_player(clan_info, player_info):
+    """ Update the player's history based on the API and database data """
     account_id = player_info['account_id']
     player = db_players.find_one({'_id': account_id})
     if player is None:
+        # Player not stored in database yet
         logger.info('Inserting new player \'%d\'', account_id)
         player = {
             '_id': account_id,
@@ -66,10 +75,11 @@ def update_player(clan_info, player_info):
             ]
         }
     else:
+        # Player exists in database, update their history
         logger.info('Updating history of player \'%d\'', account_id)
         last = player['history'][-1]
         if not player['has_clan'] or last['clan_id'] != clan_info['clan_id']:
-            # player clan changed, add history entry
+            # Player clan changed -> add history entry
             player['history'] += {
                 'clan_id': clan_info['clan_id'],
                 'clan_name': clan_info['name'],
@@ -77,53 +87,58 @@ def update_player(clan_info, player_info):
                 'last_seen': datetime.utcnow()
             }
         else:
+            # Player still in the same clan
             last['last_seen'] = datetime.utcnow()
         player['has_clan'] = True
     return player
 
 
-@task(rate_limit='10/s')
-def get_members_and_update_db(clan):
-    logger.info("Getting members of clan '%s'", str(clan['name']))
+@task(rate_limit='8/s')
+def get_members_and_update_db(clans):
+    """ Update the members of the given clans """
     try:
         r = requests.get(API_URL + '/clan/info/', timeout=API_REQUEST_TIMEOUT,
                          params={
                              'application_id': API_TOKEN,
-                             'clan_id': clan['clan_id']
+                             'clan_id': ','.join(str(clan['clan_id']) for clan in clans)
                          })
-        logger.info("Received members of clan '%s'", str(clan['name']))
         response = r.json()
         if r.status_code == 200 and response['status'] == 'ok':
-            clan_info = response['data'][str(clan['clan_id'])]
+            for cid, clan_info in response['data'].items():
+                logger.info("Updating info of clan '%s'", str(clan_info['clan_id']))
+                clan_info['_id'] = clan_info['clan_id']
+                clan_info['member_ids'] = [member['account_id'] for member in clan_info['members'].values()]
+                db_clans.update({"_id": clan_info['_id']}, clan_info, upsert=True)
 
-            logger.info("Updating info of clan '%s'", str(clan_info['clan_id']))
-            clan_info['_id'] = clan_info['clan_id']
-            clan_info['member_ids'] = [member['account_id'] for member in clan_info['members'].values()]
-            db_clans.update({"_id": clan_info['_id']}, clan_info, upsert=True)
+                if len(clan_info["members"]) == 0:
+                    return
 
-            if len(clan_info["members"]) == 0:
-                return
-
-            bulk = db_players.initialize_unordered_bulk_op()
-            for _, player_info in clan_info['members'].items():
-                player = update_player(clan_info, player_info)
-                bulk.find({'_id': player['_id']}).upsert().update({'$set': player})
-            bulk.execute()
-            logger.info("Executed bulk commands")
+                bulk = db_players.initialize_unordered_bulk_op()
+                for _, player_info in clan_info['members'].items():
+                    player = update_player(clan_info, player_info)
+                    bulk.find({'_id': player['_id']}).upsert().update({'$set': player})
+                bulk.execute()
+                logger.info("Executed bulk commands")
 
     except requests.exceptions.ConnectionError as e:
-        logger.error("Connection error when trying to get members of clan '%s'", clan['name'])
+        logger.error("Connection error when trying to get members of clans: %s", str(e))
 
 
-@task(rate_limit='10/s')
+@task(rate_limit='8/s')
 def get_clans(page_no):
-    logger.info("Getting clans page " + str(page_no))
-    r = requests.get(API_URL + '/clan/list/', timeout=API_REQUEST_TIMEOUT,
-                     params={
-                         'application_id': API_TOKEN,
-                         'page_no': page_no
-                     })
-    logger.info("Received clans page " + str(page_no))
-    response = r.json()
-    if r.status_code == 200 and response['status'] == 'ok':
-        return [clan for clan in response['data']]
+    """ Return the list of clans for the specified page (due to pagination) """
+    logger.info("Getting clans page %d", page_no)
+    try:
+        r = requests.get(API_URL + '/clan/list/', timeout=API_REQUEST_TIMEOUT,
+                         params={
+                             'application_id': API_TOKEN,
+                             'page_no': page_no
+                         })
+
+        logger.info("Received clans page %d", page_no)
+        response = r.json()
+        if r.status_code == 200 and response['status'] == 'ok':
+            return [clan for clan in response['data']]
+    except requests.exceptions.ConnectionError as e:
+        logger.error("Connection error when trying to get clans: %s", str(e))
+        return []
