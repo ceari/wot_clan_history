@@ -1,0 +1,11 @@
+*.pyc
+*.pyo
+*.egg-ignore
+*.egg-info
+dist
+build
+docs/_build
+click.egg-info
+.idea/
+local_config.py
+.tox
