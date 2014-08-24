@@ -101,6 +101,9 @@ def get_members_and_update_db(clan):
             clan_info['member_ids'] = [member['account_id'] for member in clan_info['members'].values()]
             db_clans.update({"_id": clan_info['_id']}, clan_info, upsert=True)
 
+            if len(clan_info["members"]) == 0:
+                return
+
             bulk = db_players.initialize_unordered_bulk_op()
             for _, player_info in clan_info['members'].items():
                 player = update_player(clan_info, player_info)
