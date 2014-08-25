@@ -35,8 +35,19 @@ def json_bson(data, code, headers={}):
 class Player(restful.Resource):
     @staticmethod
     def get(player_name):
-        return players.find_one({'account_name': player_name}) or abort(404)
+        return players.find_one({
+            'account_name': {
+                '$regex': '^' + player_name + '$',
+                '$options': 'i'}
+        }) or abort(404)
 
+
+class Clan(restful.Resource):
+    @staticmethod
+    def get(clan_id):
+        return clans.find_one({
+            '_id': clan_id
+        }) or abort(404)
 
 class PlayerCount(restful.Resource):
     def get(self):
@@ -47,10 +58,13 @@ class ClanCount(restful.Resource):
     def get(self):
         return {'count': clans.count()}
 
+
 @app.route('/')
 def index():
     return render_template('index.html')
 
+
 api.add_resource(Player, '/player/<string:player_name>')
+api.add_resource(Clan, '/clan/<int:clan_id>')
 api.add_resource(PlayerCount, '/player/count')
 api.add_resource(ClanCount, '/clan/count')

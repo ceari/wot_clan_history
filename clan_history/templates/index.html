@@ -6,11 +6,12 @@
   <link rel="stylesheet" href="{{url_for('static', filename='bower_components/bootstrap/dist/css/bootstrap.css')}}">
   <link rel="stylesheet" href="{{url_for('static', filename='css/app.css')}}">
   <script src="{{url_for('static', filename='bower_components/angular/angular.js')}}"></script>
+  <script src="{{url_for('static', filename='bower_components/moment/moment.js')}}"></script>
   <script src="{{url_for('static', filename='app.js')}}"></script>
 </head>
 {% raw %}
 <body ng-controller="PlayerCtrl">
-    <div class="container-fluid">
+    <div class="container-fluid col-lg-6">
         <form role="form">
             <div class="form-group">
                 <label for="player_name">Player name</label>
@@ -19,9 +20,13 @@
             <button type="submit" class="btn btn-default" ng-click="search()">Find</button>
         </form>
 
-        <p ng-model="player">{{player}}
+        <p ng-model="player">
+            <h3>{{player.account_name}}</h3>
+
             <ul>
-                <li ng-repeat="h in player.history">{{h}}</li>
+                <li ng-repeat="h in player.history">
+                    {{h.created_at}} <img src="{{h.emblem_url}}"> {{h.clan_name}}
+                </li>
             </ul>
         </p>
     </div>
