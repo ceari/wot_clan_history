@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en" ng-app="clanHistoryApp">
+<head>
+  <meta charset="utf-8">
+  <title>Clan History</title>
+  <link rel="stylesheet" href="{{url_for('static', filename='bower_components/bootstrap/dist/css/bootstrap.css')}}">
+  <link rel="stylesheet" href="{{url_for('static', filename='css/app.css')}}">
+  <script src="{{url_for('static', filename='bower_components/angular/angular.js')}}"></script>
+  <script src="{{url_for('static', filename='app.js')}}"></script>
+</head>
+{% raw %}
+<body ng-controller="PlayerCtrl">
+    <div class="container-fluid">
+        <form role="form">
+            <div class="form-group">
+                <label for="player_name">Player name</label>
+                <input class="form-control" id="player_name" ng-model="player_name  ">
+            </div>
+            <button type="submit" class="btn btn-default" ng-click="search()">Find</button>
+        </form>
+
+        <p ng-model="player">{{player}}
+            <ul>
+                <li ng-repeat="h in player.history">{{h}}</li>
+            </ul>
+        </p>
+    </div>
+</body>
+{% endraw %}
+</html>

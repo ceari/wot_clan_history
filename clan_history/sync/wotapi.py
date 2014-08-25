@@ -1,5 +1,7 @@
 import logging
 import itertools
+import random
+import json
 from datetime import datetime
 
 import requests
@@ -14,7 +16,7 @@ from ..config import MONGO_URI, API_URL, API_TOKEN, API_REQUEST_TIMEOUT, \
 
 
 s = requests.Session()
-s.mount(API_URL, HTTPAdapter(max_retries=5))
+s.mount("http://", HTTPAdapter(max_retries=10))
 
 celery = Celery('history-sync', broker=CELERY_BROKER_URL)
 celery.conf.update({'CELERY_RESULT_BACKEND': CELERY_RESULT_BACKEND})
@@ -41,8 +43,9 @@ def sync():
     """ Synchronize the database """
     logger = logging.getLogger(__name__)
     logger.addHandler(logging.StreamHandler())
-    res = group(get_clans.s(no) for no in range(280, 405))().get()
+    res = group(get_clans.s(no) for no in range(1, 405))().get()
     clans = list(itertools.chain.from_iterable(res))
+    random.shuffle(clans)
     num_players = sum(clan['members_count'] for clan in clans)
     logger.info("Processing %d clans and %d players in total", len(clans), num_players)
     group([get_members_and_update_db.s(c) for c in chunks(clans, 50)])().get()
@@ -50,6 +53,7 @@ def sync():
     for player in db_players.find():
         if db_clans.find_one({'member_ids': player['account_id']}, {"_id": 1}) is None:
             player['has_clan'] = False
+            player['clan_id'] = None
             db_players.update({'_id': player['_id']}, player)
 
 
@@ -80,20 +84,21 @@ def update_player(clan_info, player_info):
         last = player['history'][-1]
         if not player['has_clan'] or last['clan_id'] != clan_info['clan_id']:
             # Player clan changed -> add history entry
-            player['history'] += {
+            player['history'].append({
                 'clan_id': clan_info['clan_id'],
                 'clan_name': clan_info['name'],
                 'created_at': datetime.utcfromtimestamp(player_info['created_at']),
                 'last_seen': datetime.utcnow()
-            }
+            })
         else:
             # Player still in the same clan
             last['last_seen'] = datetime.utcnow()
         player['has_clan'] = True
+        player['clan_id'] = clan_info['clan_id']
     return player
 
 
-@task(rate_limit='8/s')
+@task(rate_limit='10/s')
 def get_members_and_update_db(clans):
     """ Update the members of the given clans """
     try:
@@ -119,12 +124,13 @@ def get_members_and_update_db(clans):
                     bulk.find({'_id': player['_id']}).upsert().update({'$set': player})
                 bulk.execute()
                 logger.info("Executed bulk commands")
+        else:
+            logger.error("Request failed: %s", json.dumps(response))
+    except requests.exceptions.RequestException:
+        logger.error("Error when trying to get members of clans", exc_info=True)
 
-    except requests.exceptions.ConnectionError as e:
-        logger.error("Connection error when trying to get members of clans: %s", str(e))
 
-
-@task(rate_limit='8/s')
+@task(rate_limit='10/s')
 def get_clans(page_no):
     """ Return the list of clans for the specified page (due to pagination) """
     logger.info("Getting clans page %d", page_no)
@@ -135,10 +141,13 @@ def get_clans(page_no):
                              'page_no': page_no
                          })
 
-        logger.info("Received clans page %d", page_no)
         response = r.json()
         if r.status_code == 200 and response['status'] == 'ok':
-            return [clan for clan in response['data']]
-    except requests.exceptions.ConnectionError as e:
-        logger.error("Connection error when trying to get clans: %s", str(e))
+            logger.info("Received clans page %d", page_no)
+            return response['data']
+        else:
+            logger.error("Request failed: %s", json.dumps(response))
+            return []
+    except requests.exceptions.RequestException:
+        logger.error("Error when trying to get members of clans", exc_info=True)
         return []

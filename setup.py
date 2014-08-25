@@ -9,7 +9,7 @@ setup(
     author_email='daniel.diepold@gmail.com',
     py_modules=['clan_history'],
     install_requires=[
-        'flask-restful>=0.2.12',
+        'flask-restful',
         'pymongo',
         'Celery-with-redis',
         'requests'
