@@ -36,6 +36,8 @@ class Player(restful.Resource):
     @staticmethod
     def get(player_name):
         return players.find_one({
+            'account_name': player_name,
+        }) or players.find_one({
             'account_name': {
                 '$regex': '^' + player_name + '$',
                 '$options': 'i'}

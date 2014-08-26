@@ -9,10 +9,12 @@ clanHistoryApp.controller('PlayerCtrl', function ($scope, $http) {
         var clan_id_str = h.clan_id.toString().substring(h.clan_id.toString().length - 3, h.clan_id.toString().length);
         h.emblem_url = 'http://clans.worldoftanks.eu/media/clans/emblems/cl_' + clan_id_str + '/' + h.clan_id + '/emblem_32x32.png';
       });
-
-
       $scope.player = data;
-
+      $scope.error = null;
+    }).error(function(err, status) {
+      if (status === 404) {
+        $scope.error = 404;
+      }
     });
   };
 });
