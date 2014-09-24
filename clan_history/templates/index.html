@@ -30,7 +30,7 @@
                     <li ng-repeat="h in player.history">
                         <div>
                             {{h.created_at}} <i class="fa fa-chevron-right"><img title="{{h.clan_name}}" src="{{h.emblem_url}}"></i> {{h.clan_name}}
-                            <span ng-if="$middle || !player.has_clan"><i class="fa fa-chevron-right"></i> {{h.last_seen}} </span>
+                            <span ng-if="!$last || !player.has_clan"><i class="fa fa-chevron-right"></i> {{h.last_seen}} </span>
                         </div>
                     </li>
                 </ul>

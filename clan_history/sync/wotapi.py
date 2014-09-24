@@ -48,7 +48,8 @@ def sync():
     random.shuffle(clans)
     num_players = sum(clan['members_count'] for clan in clans)
     logger.info("Processing %d clans and %d players in total", len(clans), num_players)
-    group([get_members_and_update_db.s(c) for c in chunks(clans, 50)])().get()
+    tasks = filter(lambda x: x is not None, [get_members_and_update_db.s(c) for c in chunks(clans, 50)])
+    group(tasks)().get()
     logger.info("Checking players that are not in any clans")
     for player in db_players.find():
         if db_clans.find_one({'member_ids': player['account_id']}, {"_id": 1}) is None:
